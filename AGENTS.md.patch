@@ -21,6 +21,7 @@ python3 skills/site-info-collector/scripts/site-collector.py --search --output /
 - 只有用户明确说「搜新的」才不带 `--use-cache`（强制重新搜索）
 - 收到指令后直接 exec 执行，不要反问用户
 - 回复用户「采集已启动，完成后会自动推送结果」即可
+- 脚本运行完毕后，**必须完整转发**脚本输出的采集报告（包括失败归因和复盘建议），不要自己重写或省略任何内容
 
 ---
 
