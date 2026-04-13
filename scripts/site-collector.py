@@ -459,7 +459,7 @@ def main():
     parser.add_argument("--tg-token", help="Telegram Bot Token")
     parser.add_argument("--tg-chat", help="Telegram Chat ID")
     parser.add_argument("--engine", default="tavily", help="搜索引擎")
-    parser.add_argument("--url-cache", default=os.path.expanduser("~/.openclaw/workspace/skills/site-info-collector/data/url-cache.txt"),
+    parser.add_argument("--url-cache", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "url-cache.txt"),
                         help="URL 缓存文件路径（搜索结果会追加到此文件，下次可跳过搜索直接采集）")
     parser.add_argument("--use-cache", action="store_true", help="使用缓存的 URL 列表，跳过搜索（日常采集模式）")
     args = parser.parse_args()
@@ -478,16 +478,18 @@ def main():
 
     # ── 第一步：获取 URL ──
 
-    # 日常采集模式：直接用缓存，不搜索
+    # 读取缓存 URL
     if args.use_cache:
         if os.path.exists(args.url_cache):
-            print(f"[1/4] 日常采集模式：使用缓存 URL 列表", file=sys.stderr)
+            print(f"[1/4] 读取缓存 URL 列表...", file=sys.stderr)
             with open(args.url_cache) as f:
                 for line in f:
                     line = line.strip()
                     if line.startswith("http"):
                         all_urls.add(line)
             print(f"  缓存中共 {len(all_urls)} 个站点", file=sys.stderr)
+            if not args.search:
+                print(f"  日常采集模式，跳过搜索", file=sys.stderr)
         else:
             print(f"[1/4] 缓存文件不存在，转为搜索模式", file=sys.stderr)
             args.search = True
