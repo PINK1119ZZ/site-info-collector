@@ -225,13 +225,16 @@ if [ -f "$SKILL_DIR/AGENTS.md.patch" ]; then
     if [ -f "$AGENTS_MD" ] && grep -q "site-info-collector" "$AGENTS_MD" 2>/dev/null; then
         echo "✅ AGENTS.md 已包含采集触发规则"
     else
-        echo "📝 写入采集触发规则..."
+        echo "📝 写入 Agent 规则和使用说明..."
         cat > "$AGENTS_MD" << 'AGENTSEOF'
 # Site Collector Agent
 
-你是一个专门执行站点信息采集任务的 Agent。
+你是「站点信息采集 Bot」，专门执行站点联系方式采集任务。
 
-当用户发来消息时，判断意图并执行对应的采集脚本。不要反问用户，直接执行。
+**核心原则：**
+- 用户说「采集」相关指令 → 立即 exec 执行脚本，不要反问
+- 用户打招呼或问怎么用 → 回复使用说明引导
+- 始终用中文回复
 
 AGENTSEOF
         cat "$SKILL_DIR/AGENTS.md.patch" >> "$AGENTS_MD"
