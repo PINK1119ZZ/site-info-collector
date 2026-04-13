@@ -81,19 +81,17 @@ sudo systemctl restart openclaw-gateway
 ```
 然后重启：`openclaw daemon restart`
 
-#### AI 模型 API Key（必须）
+#### AI 模型（必须）
 
 OpenClaw 需要一个 AI 模型来理解用户指令（如「采集导航站」→ 调用 `--category 导航`）。
 实际采集由 Python 脚本完成，AI token 消耗极少（每次指令 < 1000 token）。
 
-⚠️ **必须用 API 按量付费，不能用订阅制（GPT Plus/Pro、Claude Pro），订阅制会限流。**
+**订阅制（GPT Plus/Pro、Claude Pro）或 API 按量付费均可。**
 
-推荐 GPTProto 聚合：
-```bash
-openclaw config set models.providers.gptproto '{"baseUrl":"https://gptproto.com","api":"anthropic-messages","models":[{"id":"claude-sonnet-4-6","name":"claude-sonnet-4-6"}]}'
-openclaw config set model "gptproto/claude-sonnet-4-6"
-# 在 ~/.openclaw/agents/main/agent/auth-profiles.json 中添加 gptproto API key
-```
+AI 模型仅负责理解触发指令（如「采集导航站」→ 执行 `--category 导航`），不参与实际采集。
+搜索、爬取、提取联系方式、去重、脱敏、生成 JSON、推送 TG 全部由 Python 爬虫完成，零 token 消耗。
+
+如果 OpenClaw 上已有可用的模型（Bot 能正常回话），则无需额外配置。
 
 ### 4. 绑定 Telegram Bot
 
