@@ -31,11 +31,12 @@ bash setup.sh
 | TG Chat ID | 推送结果给谁 | Telegram 找 @userinfobot，发任意消息 |
 
 安装脚本会自动完成：
+- 创建独立 Agent `site-collector`（不影响现有 Agent 和 Bot）
 - 安装 Python 依赖 + Chromium 浏览器引擎
+- 绑定 TG Bot 到专属 Agent
 - 写入环境变量（systemd / LaunchAgent）
-- 绑定 TG Bot（独立帐号 `collector`，不影响现有 Bot）
-- 配置 exec 白名单（免审批执行脚本）
-- 合并触发规则到 AGENTS.md
+- 配置 exec 白名单（仅限采集脚本）
+- 写入触发规则到 Agent 专属 AGENTS.md
 - 重启 Gateway
 
 ## 使用方式
@@ -121,7 +122,7 @@ site-info-collector/
 
 ## 兼容性
 
-- 支持已有多个 Agent / Bot 的环境，不会影响现有服务
-- TG Bot 使用独立帐号名 `collector`
+- **完全隔离**：创建独立 Agent `site-collector`，有自己的 workspace、TG Bot 绑定、exec 白名单
+- 不影响现有 Agent、Bot、触发规则
 - 环境变量写入独立 systemd override 文件
-- exec 白名单仅添加采集脚本条目
+- 卸载只需 `openclaw agents delete site-collector`

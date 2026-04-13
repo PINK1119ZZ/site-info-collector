@@ -1,17 +1,19 @@
 #!/bin/bash
-# 站点信息采集 Skill — 一键安装脚本（交互式）
+# 站点信息采集 — 一键安装脚本（创建独立 Agent）
 # 不用 set -e，各步骤自行处理错误
+
+AGENT_NAME="site-collector"
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║     站点基础信息采集 Skill — 安装向导     ║"
+echo "║     站点基础信息采集 — 安装向导           ║"
+echo "║     将创建独立 Agent: $AGENT_NAME        ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 OPENCLAW_DIR="$HOME/.openclaw"
-SKILLS_DIR="$OPENCLAW_DIR/workspace/skills/site-info-collector"
-SCRIPTS_DIR="$SKILLS_DIR/scripts"
+AGENT_WORKSPACE="$OPENCLAW_DIR/agents/$AGENT_NAME/workspace"
 
 # ═══════════════════════════════════════
 # 1. 环境检查
@@ -24,7 +26,8 @@ if ! command -v openclaw &>/dev/null; then
     echo "❌ 未找到 OpenClaw，请先安装：https://docs.openclaw.ai"
     exit 1
 fi
-echo "✅ OpenClaw $(openclaw --version 2>/dev/null | head -1)"
+OPENCLAW_VER=$(openclaw --version 2>/dev/null | head -1)
+echo "✅ OpenClaw $OPENCLAW_VER"
 
 # 检查 Python
 if ! command -v python3 &>/dev/null; then
@@ -34,7 +37,7 @@ fi
 echo "✅ Python $(python3 --version 2>&1)"
 
 # ═══════════════════════════════════════
-# 2. 安装依赖
+# 2. 安装 Python 依赖
 # ═══════════════════════════════════════
 echo ""
 echo "━━━ 第 2 步：安装 Python 依赖 ━━━"
@@ -46,32 +49,15 @@ pip3 install --quiet requests beautifulsoup4 playwright 2>/dev/null \
   || pip3 install --break-system-packages requests beautifulsoup4 playwright
 
 echo "📦 安装 Chromium 浏览器引擎（导航站提取用）..."
-python3 -m playwright install --with-deps chromium 2>/dev/null && echo "✅ Chromium 已安装" || python3 -m playwright install chromium 2>/dev/null && echo "✅ Chromium 已安装" || echo "⚠️  Chromium 安装失败，导航站子站提取功能将不可用（不影响主采集）"
+python3 -m playwright install --with-deps chromium 2>/dev/null && echo "✅ Chromium 已安装" \
+  || python3 -m playwright install chromium 2>/dev/null && echo "✅ Chromium 已安装" \
+  || echo "⚠️  Chromium 安装失败，导航站子站提取功能将不可用（不影响主采集）"
 
 # ═══════════════════════════════════════
-# 3. 复制到正确目录
-# ═══════════════════════════════════════
-echo ""
-echo "━━━ 第 3 步：安装 Skill 文件 ━━━"
-echo ""
-
-if [ "$SKILL_DIR" != "$SKILLS_DIR" ]; then
-    echo "📁 复制 Skill 到 OpenClaw 目录..."
-    mkdir -p "$SKILLS_DIR"
-    cp -r "$SKILL_DIR"/* "$SKILLS_DIR/"
-    echo "✅ 已安装到 $SKILLS_DIR"
-else
-    echo "✅ Skill 已在正确目录"
-fi
-
-# 确保 data 目录存在（URL 缓存用）
-mkdir -p "$SKILLS_DIR/data"
-
-# ═══════════════════════════════════════
-# 4. 配置 Tavily API Key
+# 3. 配置 Tavily API Key
 # ═══════════════════════════════════════
 echo ""
-echo "━━━ 第 4 步：配置 Tavily 搜索 API ━━━"
+echo "━━━ 第 3 步：配置 Tavily 搜索 API ━━━"
 echo ""
 echo "Tavily 用于搜索关键词发现新站点。"
 echo "  申请地址：https://tavily.com"
@@ -102,10 +88,10 @@ else
 fi
 
 # ═══════════════════════════════════════
-# 5. 配置 Telegram Bot
+# 4. 配置 Telegram Bot
 # ═══════════════════════════════════════
 echo ""
-echo "━━━ 第 5 步：配置 Telegram Bot ━━━"
+echo "━━━ 第 4 步：配置 Telegram Bot ━━━"
 echo ""
 echo "Telegram Bot 用于：接收采集指令 + 推送采集结果"
 echo ""
@@ -144,10 +130,147 @@ while [ -z "$TG_CHAT" ]; do
 done
 
 # ═══════════════════════════════════════
-# 6. 写入 Gateway 环境变量
+# 5. 创建独立 Agent
 # ═══════════════════════════════════════
 echo ""
-echo "━━━ 第 6 步：写入配置 ━━━"
+echo "━━━ 第 5 步：创建独立 Agent ━━━"
+echo ""
+
+# 检查是否已存在
+EXISTING=$(openclaw agents list 2>/dev/null | grep -w "$AGENT_NAME" || true)
+if [ -n "$EXISTING" ]; then
+    echo "ℹ️  Agent '$AGENT_NAME' 已存在，跳过创建"
+else
+    echo "🤖 创建 Agent: $AGENT_NAME..."
+    openclaw agents add "$AGENT_NAME" \
+        --workspace "$AGENT_WORKSPACE" \
+        --non-interactive \
+        2>/dev/null \
+        && echo "✅ Agent '$AGENT_NAME' 已创建" \
+        || {
+            echo "⚠️  自动创建失败，尝试手动创建目录..."
+            mkdir -p "$AGENT_WORKSPACE"
+            mkdir -p "$OPENCLAW_DIR/agents/$AGENT_NAME/agent"
+            # 写入最小 agent config
+            python3 << PYEOF
+import json, os
+
+config_path = "$OPENCLAW_DIR/openclaw.json"
+with open(config_path, 'r') as f:
+    config = json.load(f)
+
+if 'agents' not in config:
+    config['agents'] = {}
+if 'list' not in config['agents']:
+    config['agents']['list'] = {}
+
+config['agents']['list']['$AGENT_NAME'] = {
+    'workspace': '$AGENT_WORKSPACE',
+    'agentDir': '$OPENCLAW_DIR/agents/$AGENT_NAME/agent'
+}
+
+with open(config_path, 'w') as f:
+    json.dump(config, f, indent=2)
+
+print("✅ Agent '$AGENT_NAME' 已手动注册")
+PYEOF
+        }
+fi
+
+# ═══════════════════════════════════════
+# 6. 安装 Skill 文件到 Agent workspace
+# ═══════════════════════════════════════
+echo ""
+echo "━━━ 第 6 步：安装 Skill 文件 ━━━"
+echo ""
+
+SKILLS_DIR="$AGENT_WORKSPACE/skills/site-info-collector"
+mkdir -p "$SKILLS_DIR/scripts"
+mkdir -p "$SKILLS_DIR/data"
+
+# 复制脚本和配置
+cp "$SKILL_DIR/scripts/"*.py "$SKILLS_DIR/scripts/" 2>/dev/null
+cp "$SKILL_DIR/scripts/"*.sh "$SKILLS_DIR/scripts/" 2>/dev/null
+cp "$SKILL_DIR/SKILL.md" "$SKILLS_DIR/" 2>/dev/null
+cp "$SKILL_DIR/AGENTS.md.patch" "$SKILLS_DIR/" 2>/dev/null
+cp "$SKILL_DIR/DEPLOY.md" "$SKILLS_DIR/" 2>/dev/null
+echo "✅ Skill 文件已安装到 $SKILLS_DIR"
+
+# 写 AGENTS.md（Agent 自己的触发规则）
+AGENTS_MD="$AGENT_WORKSPACE/AGENTS.md"
+if [ -f "$SKILL_DIR/AGENTS.md.patch" ]; then
+    if [ -f "$AGENTS_MD" ] && grep -q "site-info-collector" "$AGENTS_MD" 2>/dev/null; then
+        echo "✅ AGENTS.md 已包含采集触发规则"
+    else
+        echo "📝 写入采集触发规则..."
+        cat > "$AGENTS_MD" << 'AGENTSEOF'
+# Site Collector Agent
+
+你是一个专门执行站点信息采集任务的 Agent。
+
+当用户发来消息时，判断意图并执行对应的采集脚本。不要反问用户，直接执行。
+
+AGENTSEOF
+        cat "$SKILL_DIR/AGENTS.md.patch" >> "$AGENTS_MD"
+        echo "✅ AGENTS.md 已创建"
+    fi
+fi
+
+# ═══════════════════════════════════════
+# 7. 绑定 TG Bot 到 Agent
+# ═══════════════════════════════════════
+echo ""
+echo "━━━ 第 7 步：绑定 Telegram Bot ━━━"
+echo ""
+
+if [ -n "$TG_TOKEN" ]; then
+    # 添加 TG 帐号（用 agent 名作为帐号名）
+    echo "🔗 添加 Telegram Bot 帐号..."
+    openclaw channels add --channel telegram --account "$AGENT_NAME" --token "$TG_TOKEN" 2>/dev/null \
+        && echo "✅ Telegram 帐号 '$AGENT_NAME' 已添加" \
+        || echo "ℹ️  帐号可能已存在"
+
+    # 绑定到 agent
+    echo "🔗 绑定 Bot 到 Agent '$AGENT_NAME'..."
+    openclaw agents bind --agent "$AGENT_NAME" --bind "telegram:$AGENT_NAME" 2>/dev/null \
+        && echo "✅ Bot 已绑定到 Agent '$AGENT_NAME'" \
+        || echo "⚠️  绑定失败，请手动执行: openclaw agents bind --agent $AGENT_NAME --bind telegram:$AGENT_NAME"
+
+    # 设置 dmPolicy 为 open
+    echo "🔓 设置 DM 策略为 open..."
+    OPENCLAW_JSON="$OPENCLAW_DIR/openclaw.json"
+    if [ -f "$OPENCLAW_JSON" ]; then
+        python3 << PYEOF
+import json
+
+config_path = "$OPENCLAW_JSON"
+with open(config_path, 'r') as f:
+    config = json.load(f)
+
+if 'channels' not in config:
+    config['channels'] = {}
+if 'telegram' not in config['channels']:
+    config['channels']['telegram'] = {}
+
+config['channels']['telegram']['dmPolicy'] = 'open'
+if 'allowFrom' not in config['channels']['telegram']:
+    config['channels']['telegram']['allowFrom'] = ['*']
+elif '*' not in config['channels']['telegram']['allowFrom']:
+    config['channels']['telegram']['allowFrom'].append('*')
+
+with open(config_path, 'w') as f:
+    json.dump(config, f, indent=2)
+
+print("✅ dmPolicy 已设为 open")
+PYEOF
+    fi
+fi
+
+# ═══════════════════════════════════════
+# 8. 写入环境变量
+# ═══════════════════════════════════════
+echo ""
+echo "━━━ 第 8 步：写入环境变量 ━━━"
 echo ""
 
 # 检测操作系统
@@ -164,13 +287,10 @@ if [ "$OS_TYPE" == "macos" ]; then
     PLIST="$HOME/Library/LaunchAgents/ai.openclaw.gateway.plist"
     if [ -f "$PLIST" ]; then
         echo "📝 写入 macOS LaunchAgent 环境变量..."
-
-        # 备份
         cp "$PLIST" "$PLIST.bak.$(date +%Y%m%d%H%M%S)"
 
-        # 用 Python 修改 plist（比 PlistBuddy 更可靠）
         python3 << PYEOF
-import plistlib, sys, os
+import plistlib
 
 plist_path = "$PLIST"
 with open(plist_path, 'rb') as f:
@@ -199,7 +319,6 @@ PYEOF
         write_env_success=true
     else
         echo "⚠️  未找到 LaunchAgent plist: $PLIST"
-        echo "   请手动配置环境变量（见下方说明）"
     fi
 
 elif [ "$OS_TYPE" == "linux" ]; then
@@ -227,113 +346,26 @@ else
 fi
 
 # ═══════════════════════════════════════
-# 7. 绑定 TG Channel
+# 9. 配置权限
 # ═══════════════════════════════════════
 echo ""
-echo "━━━ 第 7 步：绑定 Telegram 频道 ━━━"
+echo "━━━ 第 9 步：配置权限 ━━━"
 echo ""
 
-if [ -n "$TG_TOKEN" ]; then
-    # 用独立帐号名 "collector"，避免跟现有 Bot 冲突
-    ACCOUNT_NAME="collector"
-
-    echo "🔗 绑定 Telegram Bot 到 OpenClaw（帐号名: $ACCOUNT_NAME）..."
-    openclaw channels add --channel telegram --account "$ACCOUNT_NAME" --token "$TG_TOKEN" 2>/dev/null \
-        && echo "✅ Telegram 频道已绑定（$ACCOUNT_NAME）" \
-        || {
-            # 可能已存在，尝试更新 token
-            echo "ℹ️  帐号可能已存在，尝试更新..."
-            openclaw channels update --channel telegram --account "$ACCOUNT_NAME" --token "$TG_TOKEN" 2>/dev/null \
-                && echo "✅ 已更新 $ACCOUNT_NAME 的 Token" \
-                || echo "⚠️  绑定失败。请手动执行: openclaw channels add --channel telegram --account $ACCOUNT_NAME --token <TOKEN>"
-        }
-
-    # 设置 dmPolicy 为 open（仅针对采集 Bot）
-    echo "🔓 设置 DM 策略为 open（无需配对审批）..."
-    OPENCLAW_JSON="$OPENCLAW_DIR/openclaw.json"
-    if [ -f "$OPENCLAW_JSON" ]; then
-        python3 << PYEOF
-import json
-
-config_path = "$OPENCLAW_JSON"
-with open(config_path, 'r') as f:
-    config = json.load(f)
-
-if 'channels' not in config:
-    config['channels'] = {}
-if 'telegram' not in config['channels']:
-    config['channels']['telegram'] = {}
-
-# 设置 dmPolicy 为 open + allowFrom *
-config['channels']['telegram']['dmPolicy'] = 'open'
-if 'allowFrom' not in config['channels']['telegram']:
-    config['channels']['telegram']['allowFrom'] = ['*']
-elif '*' not in config['channels']['telegram']['allowFrom']:
-    config['channels']['telegram']['allowFrom'].append('*')
-
-with open(config_path, 'w') as f:
-    json.dump(config, f, indent=2)
-
-print("✅ dmPolicy 已设为 open")
-PYEOF
-    fi
-fi
-
-# ═══════════════════════════════════════
-# 8. 配置工具权限
-# ═══════════════════════════════════════
-echo ""
-echo "━━━ 第 8 步：配置权限 ━━━"
-echo ""
-
-# 设置工具 profile（不同版本路径可能不同）
+# 设置工具 profile
 echo "🔧 设置工具 profile..."
 openclaw config set tools.profile full 2>/dev/null \
   || openclaw config set agents.defaults.toolsProfile full 2>/dev/null \
-  || echo "ℹ️  tools.profile 无需手动设置（此版本默认已启用）"
+  || echo "ℹ️  tools.profile 无需手动设置"
 
-# exec 白名单
+# exec 白名单（针对此 agent）
 echo "🔐 配置 exec 权限白名单..."
 SCRIPTS_PATH="$SKILLS_DIR/scripts"
-openclaw approvals allowlist add "$SCRIPTS_PATH/site-collector.py" 2>/dev/null && echo "  ✅ site-collector.py" || true
-openclaw approvals allowlist add "$SCRIPTS_PATH/keyword-search.py" 2>/dev/null && echo "  ✅ keyword-search.py" || true
-openclaw approvals allowlist add "$SCRIPTS_PATH/nav-extractor.py" 2>/dev/null && echo "  ✅ nav-extractor.py" || true
-openclaw approvals allowlist add "*/site-info-collector/scripts/*.py" 2>/dev/null && echo "  ✅ 通配符规则" || true
-openclaw approvals allowlist add "$(which python3)" 2>/dev/null && echo "  ✅ python3 binary" || true
-
-# ═══════════════════════════════════════
-# 9. 合并触发规则
-# ═══════════════════════════════════════
-echo ""
-echo "━━━ 第 9 步：配置触发规则 ━━━"
-echo ""
-
-AGENTS_MD="$OPENCLAW_DIR/workspace/AGENTS.md"
-PATCH_FILE="$SKILLS_DIR/AGENTS.md.patch"
-
-# 如果 patch 来源是当前目录（尚未复制），用当前目录的
-if [ ! -f "$PATCH_FILE" ] && [ -f "$SKILL_DIR/AGENTS.md.patch" ]; then
-    PATCH_FILE="$SKILL_DIR/AGENTS.md.patch"
-fi
-
-if [ -f "$PATCH_FILE" ]; then
-    if [ -f "$AGENTS_MD" ]; then
-        if grep -q "site-info-collector" "$AGENTS_MD" 2>/dev/null; then
-            echo "✅ AGENTS.md 已包含采集触发规则"
-        else
-            echo "📝 合并采集触发规则到 AGENTS.md..."
-            echo "" >> "$AGENTS_MD"
-            cat "$PATCH_FILE" >> "$AGENTS_MD"
-            echo "✅ 触发规则已合并"
-        fi
-    else
-        echo "📝 创建 AGENTS.md..."
-        cp "$PATCH_FILE" "$AGENTS_MD"
-        echo "✅ AGENTS.md 已创建"
-    fi
-else
-    echo "⚠️  未找到 AGENTS.md.patch，跳过触发规则配置"
-fi
+openclaw approvals allowlist add --agent "$AGENT_NAME" "$SCRIPTS_PATH/site-collector.py" 2>/dev/null && echo "  ✅ site-collector.py" || true
+openclaw approvals allowlist add --agent "$AGENT_NAME" "$SCRIPTS_PATH/keyword-search.py" 2>/dev/null && echo "  ✅ keyword-search.py" || true
+openclaw approvals allowlist add --agent "$AGENT_NAME" "$SCRIPTS_PATH/nav-extractor.py" 2>/dev/null && echo "  ✅ nav-extractor.py" || true
+openclaw approvals allowlist add --agent "$AGENT_NAME" "*/site-info-collector/scripts/*.py" 2>/dev/null && echo "  ✅ 通配符规则" || true
+openclaw approvals allowlist add --agent "$AGENT_NAME" "$(which python3)" 2>/dev/null && echo "  ✅ python3 binary" || true
 
 # ═══════════════════════════════════════
 # 10. 重启 Gateway
@@ -356,8 +388,9 @@ fi
 sleep 3
 
 echo ""
-echo "📊 检查 Gateway 状态..."
-openclaw health 2>/dev/null && echo "✅ Gateway 运行中" || openclaw daemon status 2>/dev/null || echo "ℹ️  Gateway 状态未知，请稍后检查"
+echo "📊 检查状态..."
+openclaw health 2>/dev/null | head -5 && echo "" || true
+openclaw agents list 2>/dev/null | grep -A2 "$AGENT_NAME" && echo "" || true
 
 # ═══════════════════════════════════════
 # 完成
@@ -368,13 +401,14 @@ echo "║           ✅ 安装完成！                   ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 echo "📋 配置摘要："
+echo "  ├─ Agent:          $AGENT_NAME（独立 Agent，不影响现有服务）"
+echo "  ├─ Workspace:      $AGENT_WORKSPACE"
 echo "  ├─ Tavily API Key: $([ -n "$TAVILY_KEY" ] && echo '已配置' || echo '跳过（仅限缓存模式）')"
 echo "  ├─ TG Bot Token:   $([ -n "$TG_TOKEN" ] && echo '已配置' || echo '未配置')"
 echo "  ├─ TG Chat ID:     $([ -n "$TG_CHAT" ] && echo '已配置' || echo '未配置')"
-echo "  ├─ 工具 Profile:   full"
-echo "  ├─ Exec 白名单:    已配置"
-echo "  ├─ DM 策略:        open（无需配对）"
-echo "  └─ 触发规则:       已合并"
+echo "  ├─ TG Bot 绑定:    $AGENT_NAME → telegram:$AGENT_NAME"
+echo "  ├─ Exec 白名单:    已配置（仅限 $AGENT_NAME）"
+echo "  └─ DM 策略:        open（无需配对）"
 echo ""
 
 if [ -n "$TG_TOKEN" ]; then
