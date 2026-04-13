@@ -371,6 +371,19 @@ else
     echo "⚠️  无法识别操作系统，请手动配置环境变量"
 fi
 
+# 写 .env 文件到 data 目录（脚本的保底读取方式，不依赖 exec 环境变量继承）
+DATA_DIR="$SKILLS_DIR/data"
+mkdir -p "$DATA_DIR"
+ENV_FILE="$DATA_DIR/.env"
+echo "📝 写入 .env 文件（$ENV_FILE）..."
+{
+    [ -n "$TAVILY_KEY" ] && echo "TAVILY_API_KEY=$TAVILY_KEY"
+    [ -n "$TG_TOKEN" ] && echo "TG_BOT_TOKEN=$TG_TOKEN"
+    [ -n "$TG_CHAT" ] && echo "TG_CHAT_ID=$TG_CHAT"
+} > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+echo "✅ .env 已写入（仅 root 可读）"
+
 # ═══════════════════════════════════════
 # 9. 配置权限
 # ═══════════════════════════════════════

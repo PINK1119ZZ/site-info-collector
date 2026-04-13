@@ -467,7 +467,17 @@ def main():
     parser.add_argument("--full", action="store_true", help="忽略历史，输出全量结果")
     args = parser.parse_args()
 
-    # TG 参数也可从环境变量获取
+    # TG 参数：命令行 > 环境变量 > .env 文件
+    # exec 子进程可能不继承 gateway 环境变量，所以也读 .env 文件
+    env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", ".env")
+    if os.path.exists(env_file):
+        with open(env_file) as ef:
+            for line in ef:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+
     tg_token = args.tg_token or os.environ.get("TG_BOT_TOKEN")
     tg_chat = args.tg_chat or os.environ.get("TG_CHAT_ID")
 
