@@ -378,20 +378,26 @@ echo ""
 echo "━━━ 第 9 步：配置权限 ━━━"
 echo ""
 
-# 设置工具 profile
-echo "🔧 设置工具 profile..."
-openclaw config set tools.profile full 2>/dev/null \
-  || openclaw config set agents.defaults.toolsProfile full 2>/dev/null \
-  || echo "ℹ️  tools.profile 无需手动设置"
+# 注意：不修改全局 tools.profile，避免影响现有 agent
+# 只通过 exec 白名单授权 site-collector agent 执行采集脚本
 
-# exec 白名单（针对此 agent）
-echo "🔐 配置 exec 权限白名单..."
+echo "🔐 配置 exec 权限白名单（仅限 $AGENT_NAME agent）..."
 SCRIPTS_PATH="$SKILLS_DIR/scripts"
+
+# 方式1：精确路径白名单
 openclaw approvals allowlist add --agent "$AGENT_NAME" "$SCRIPTS_PATH/site-collector.py" 2>/dev/null && echo "  ✅ site-collector.py" || true
 openclaw approvals allowlist add --agent "$AGENT_NAME" "$SCRIPTS_PATH/keyword-search.py" 2>/dev/null && echo "  ✅ keyword-search.py" || true
 openclaw approvals allowlist add --agent "$AGENT_NAME" "$SCRIPTS_PATH/nav-extractor.py" 2>/dev/null && echo "  ✅ nav-extractor.py" || true
+
+# 方式2：通配符（兼容不同安装路径）
 openclaw approvals allowlist add --agent "$AGENT_NAME" "*/site-info-collector/scripts/*.py" 2>/dev/null && echo "  ✅ 通配符规则" || true
+
+# 方式3：python3 本体（脚本通过 python3 xxx.py 调用时需要）
 openclaw approvals allowlist add --agent "$AGENT_NAME" "$(which python3)" 2>/dev/null && echo "  ✅ python3 binary" || true
+
+# 设置 agent 级别的 exec 安全策略为 full（不影响全局）
+openclaw approvals set --agent "$AGENT_NAME" --security full 2>/dev/null && echo "  ✅ agent exec 策略: full" \
+  || echo "  ℹ️  approvals set 不支持，白名单已足够"
 
 # ═══════════════════════════════════════
 # 10. 重启 Gateway
