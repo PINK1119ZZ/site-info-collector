@@ -205,9 +205,10 @@ PYEOF
 elif [ "$OS_TYPE" == "linux" ]; then
     echo "📝 写入 Linux systemd 环境变量..."
 
-    # 创建 override 文件
+    # 用独立的 override 文件，不影响已有配置
     OVERRIDE_DIR="/etc/systemd/system/openclaw-gateway.service.d"
     sudo mkdir -p "$OVERRIDE_DIR" 2>/dev/null
+    OVERRIDE_FILE="$OVERRIDE_DIR/site-collector-env.conf"
 
     ENV_LINES=""
     [ -n "$TAVILY_KEY" ] && ENV_LINES="${ENV_LINES}Environment=\"TAVILY_API_KEY=$TAVILY_KEY\"\n"
@@ -215,9 +216,10 @@ elif [ "$OS_TYPE" == "linux" ]; then
     [ -n "$TG_CHAT" ] && ENV_LINES="${ENV_LINES}Environment=\"TG_CHAT_ID=$TG_CHAT\"\n"
 
     if [ -n "$ENV_LINES" ]; then
-        echo -e "[Service]\n$ENV_LINES" | sudo tee "$OVERRIDE_DIR/env.conf" > /dev/null
+        echo -e "[Service]\n$ENV_LINES" | sudo tee "$OVERRIDE_FILE" > /dev/null
         sudo systemctl daemon-reload
-        echo "✅ 已写入 systemd override"
+        echo "✅ 已写入 systemd override（$OVERRIDE_FILE）"
+        echo "   不影响已有环境变量配置"
         write_env_success=true
     fi
 else
@@ -232,10 +234,21 @@ echo "━━━ 第 7 步：绑定 Telegram 频道 ━━━"
 echo ""
 
 if [ -n "$TG_TOKEN" ]; then
-    echo "🔗 绑定 Telegram Bot 到 OpenClaw..."
-    openclaw channels add --channel telegram --token "$TG_TOKEN" 2>/dev/null && echo "✅ Telegram 频道已绑定" || echo "⚠️  绑定失败，可能已绑定过。如需更换请先 openclaw channels remove telegram"
+    # 用独立帐号名 "collector"，避免跟现有 Bot 冲突
+    ACCOUNT_NAME="collector"
 
-    # 设置 dmPolicy 为 open（无需配对）
+    echo "🔗 绑定 Telegram Bot 到 OpenClaw（帐号名: $ACCOUNT_NAME）..."
+    openclaw channels add --channel telegram --account "$ACCOUNT_NAME" --token "$TG_TOKEN" 2>/dev/null \
+        && echo "✅ Telegram 频道已绑定（$ACCOUNT_NAME）" \
+        || {
+            # 可能已存在，尝试更新 token
+            echo "ℹ️  帐号可能已存在，尝试更新..."
+            openclaw channels update --channel telegram --account "$ACCOUNT_NAME" --token "$TG_TOKEN" 2>/dev/null \
+                && echo "✅ 已更新 $ACCOUNT_NAME 的 Token" \
+                || echo "⚠️  绑定失败。请手动执行: openclaw channels add --channel telegram --account $ACCOUNT_NAME --token <TOKEN>"
+        }
+
+    # 设置 dmPolicy 为 open（仅针对采集 Bot）
     echo "🔓 设置 DM 策略为 open（无需配对审批）..."
     OPENCLAW_JSON="$OPENCLAW_DIR/openclaw.json"
     if [ -f "$OPENCLAW_JSON" ]; then
@@ -250,8 +263,13 @@ if 'channels' not in config:
     config['channels'] = {}
 if 'telegram' not in config['channels']:
     config['channels']['telegram'] = {}
+
+# 设置 dmPolicy 为 open + allowFrom *
 config['channels']['telegram']['dmPolicy'] = 'open'
-config['channels']['telegram']['allowFrom'] = ['*']
+if 'allowFrom' not in config['channels']['telegram']:
+    config['channels']['telegram']['allowFrom'] = ['*']
+elif '*' not in config['channels']['telegram']['allowFrom']:
+    config['channels']['telegram']['allowFrom'].append('*')
 
 with open(config_path, 'w') as f:
     json.dump(config, f, indent=2)
