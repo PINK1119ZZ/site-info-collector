@@ -251,6 +251,7 @@ if 'channels' not in config:
 if 'telegram' not in config['channels']:
     config['channels']['telegram'] = {}
 config['channels']['telegram']['dmPolicy'] = 'open'
+config['channels']['telegram']['allowFrom'] = ['*']
 
 with open(config_path, 'w') as f:
     json.dump(config, f, indent=2)
@@ -267,9 +268,11 @@ echo ""
 echo "━━━ 第 8 步：配置权限 ━━━"
 echo ""
 
-# 设置工具 profile
-echo "🔧 设置工具 profile 为 full..."
-openclaw config set tools.profile full 2>/dev/null && echo "✅ 工具 profile: full" || echo "⚠️  设置失败，请手动执行: openclaw config set tools.profile full"
+# 设置工具 profile（不同版本路径可能不同）
+echo "🔧 设置工具 profile..."
+openclaw config set tools.profile full 2>/dev/null \
+  || openclaw config set agents.defaults.toolsProfile full 2>/dev/null \
+  || echo "ℹ️  tools.profile 无需手动设置（此版本默认已启用）"
 
 # exec 白名单
 echo "🔐 配置 exec 权限白名单..."
@@ -322,15 +325,21 @@ echo "━━━ 第 10 步：重启 Gateway ━━━"
 echo ""
 
 echo "🔄 重启 OpenClaw Gateway 使配置生效..."
-openclaw daemon restart 2>/dev/null && echo "✅ Gateway 已重启" || echo "⚠️  重启失败，请手动执行: openclaw daemon restart"
+if [ "$OS_TYPE" == "linux" ]; then
+    sudo systemctl daemon-reload 2>/dev/null
+    sudo systemctl restart openclaw-gateway 2>/dev/null && echo "✅ Gateway 已重启（systemd）" \
+      || systemctl --user restart openclaw-gateway 2>/dev/null && echo "✅ Gateway 已重启（user systemd）" \
+      || openclaw daemon restart 2>/dev/null && echo "✅ Gateway 已重启" \
+      || echo "⚠️  重启失败，请手动执行: openclaw daemon restart"
+else
+    openclaw daemon restart 2>/dev/null && echo "✅ Gateway 已重启" || echo "⚠️  重启失败，请手动执行: openclaw daemon restart"
+fi
 
-# 等一下让 gateway 启动
 sleep 3
 
-# 检查状态
 echo ""
 echo "📊 检查 Gateway 状态..."
-openclaw daemon status 2>/dev/null || echo "⚠️  无法获取状态"
+openclaw health 2>/dev/null && echo "✅ Gateway 运行中" || openclaw daemon status 2>/dev/null || echo "ℹ️  Gateway 状态未知，请稍后检查"
 
 # ═══════════════════════════════════════
 # 完成
