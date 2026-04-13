@@ -1,6 +1,6 @@
 #!/bin/bash
 # 站点信息采集 Skill — 一键安装脚本（交互式）
-set -e
+# 不用 set -e，各步骤自行处理错误
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
@@ -41,10 +41,12 @@ echo "━━━ 第 2 步：安装 Python 依赖 ━━━"
 echo ""
 
 echo "📦 安装 requests, beautifulsoup4, playwright..."
-pip3 install --quiet requests beautifulsoup4 playwright 2>/dev/null || pip3 install requests beautifulsoup4 playwright
+pip3 install --quiet requests beautifulsoup4 playwright 2>/dev/null \
+  || pip3 install --break-system-packages --quiet requests beautifulsoup4 playwright 2>/dev/null \
+  || pip3 install --break-system-packages requests beautifulsoup4 playwright
 
 echo "📦 安装 Chromium 浏览器引擎（导航站提取用）..."
-python3 -m playwright install chromium 2>/dev/null && echo "✅ Chromium 已安装" || echo "⚠️  Chromium 安装失败，导航站子站提取功能将不可用（不影响主采集）"
+python3 -m playwright install --with-deps chromium 2>/dev/null && echo "✅ Chromium 已安装" || python3 -m playwright install chromium 2>/dev/null && echo "✅ Chromium 已安装" || echo "⚠️  Chromium 安装失败，导航站子站提取功能将不可用（不影响主采集）"
 
 # ═══════════════════════════════════════
 # 3. 复制到正确目录
