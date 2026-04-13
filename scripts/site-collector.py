@@ -422,7 +422,7 @@ def generate_report(results):
 
 # ── Telegram 推送 ──
 
-def send_telegram(token, chat_id, text=None, file_path=None):
+def send_telegram(token, chat_id, text=None, file_path=None, caption=None):
     """发送 Telegram 消息或文件"""
     if text:
         # 截断过长消息
@@ -438,7 +438,7 @@ def send_telegram(token, chat_id, text=None, file_path=None):
         with open(file_path, "rb") as f:
             requests.post(
                 f"https://api.telegram.org/bot{token}/sendDocument",
-                data={"chat_id": chat_id, "caption": "站点基础信息采集结果"},
+                data={"chat_id": chat_id, "caption": caption or "站点基础信息采集结果"},
                 files={"document": f},
                 timeout=60,
             )
@@ -462,6 +462,9 @@ def main():
     parser.add_argument("--url-cache", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "url-cache.txt"),
                         help="URL 缓存文件路径（搜索结果会追加到此文件，下次可跳过搜索直接采集）")
     parser.add_argument("--use-cache", action="store_true", help="使用缓存的 URL 列表，跳过搜索（日常采集模式）")
+    parser.add_argument("--history", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "history.json"),
+                        help="历史采集记录（增量模式：只输出新增联系方式）")
+    parser.add_argument("--full", action="store_true", help="忽略历史，输出全量结果")
     args = parser.parse_args()
 
     # TG 参数也可从环境变量获取
@@ -588,21 +591,90 @@ def main():
                            progress_callback=on_progress)
     elapsed = time.time() - start_time
 
-    # ── 第四步：输出 ──
+    # ── 第四步：增量比对 + 输出 ──
     print(f"\n[4/4] 输出结果...", file=sys.stderr)
 
+    # 加载历史记录
+    history = {}  # key: domain -> set of (type, value)
+    history_data = []  # 完整历史数据
+    if not args.full and os.path.exists(args.history):
+        try:
+            with open(args.history, "r", encoding="utf-8") as f:
+                history_data = json.load(f)
+            for site in history_data:
+                domain = site.get("site_url", "").replace("https://", "").replace("http://", "").rstrip("/")
+                for c in site.get("contacts", []):
+                    history.setdefault(domain, set()).add((c["type"], c["value"].lower()))
+            print(f"  📂 已加载历史记录: {len(history_data)} 个站点", file=sys.stderr)
+        except Exception as e:
+            print(f"  ⚠️ 历史记录加载失败: {e}", file=sys.stderr)
+
+    # 分离新增内容
+    new_results = []  # 本次新增的站点/联系方式
+    for site in results:
+        domain = site.get("site_url", "").replace("https://", "").replace("http://", "").rstrip("/")
+        known = history.get(domain, set())
+
+        if not known:
+            # 全新站点
+            new_results.append(site)
+        else:
+            # 已知站点，只保留新增联系方式
+            new_contacts = [c for c in site.get("contacts", [])
+                           if (c["type"], c["value"].lower()) not in known]
+            if new_contacts:
+                new_site = dict(site)
+                new_site["contacts"] = new_contacts
+                new_results.append(new_site)
+
+    # 更新历史记录（合并本次结果）
+    history_map = {s.get("site_url", "").rstrip("/"): s for s in history_data}
+    for site in results:
+        url = site.get("site_url", "").rstrip("/")
+        if url in history_map:
+            # 合并联系方式
+            existing_contacts = {(c["type"], c["value"].lower()) for c in history_map[url].get("contacts", [])}
+            for c in site.get("contacts", []):
+                if (c["type"], c["value"].lower()) not in existing_contacts:
+                    history_map[url]["contacts"].append(c)
+            # 更新状态
+            if site["status"] == "success":
+                history_map[url]["status"] = "success"
+        else:
+            history_map[url] = site
+
+    # 保存历史
+    os.makedirs(os.path.dirname(args.history), exist_ok=True)
+    with open(args.history, "w", encoding="utf-8") as f:
+        json.dump(list(history_map.values()), f, ensure_ascii=False, indent=2)
+
+    total_history = len(history_map)
+    total_history_contacts = sum(len(s.get("contacts", [])) for s in history_map.values())
+
+    # 输出本次新增结果
     with open(args.output, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+        json.dump(new_results, f, ensure_ascii=False, indent=2)
+
+    new_contacts_count = sum(len(s.get("contacts", [])) for s in new_results)
 
     report = generate_report(results)
+    report += f"\n\n--- 增量统计 ---"
+    report += f"\n🆕 本次新增: {len(new_results)} 个站点, {new_contacts_count} 条联系方式"
+    report += f"\n📚 历史累计: {total_history} 个站点, {total_history_contacts} 条联系方式"
     report += f"\n\n⏱ 耗时: {elapsed:.0f} 秒 ({elapsed/60:.1f} 分钟)"
     print(f"\n{report}", file=sys.stderr)
-    print(f"\n结果文件: {args.output}", file=sys.stderr)
+    print(f"\n结果文件（仅新增）: {args.output}", file=sys.stderr)
+    print(f"历史记录: {args.history}", file=sys.stderr)
 
     # 推送到 Telegram
     if tg_token and tg_chat:
         send_telegram(tg_token, tg_chat, text=report)
-        send_telegram(tg_token, tg_chat, file_path=args.output)
+        # 推送新增结果文件
+        if new_results:
+            send_telegram(tg_token, tg_chat, file_path=args.output,
+                          caption=f"📊 新增结果（{len(new_results)}站点 / {new_contacts_count}条联系方式）")
+        else:
+            send_telegram(tg_token, tg_chat, text="ℹ️ 本次无新增联系方式，所有数据与上次一致。")
         print("已推送到 Telegram", file=sys.stderr)
 
 
