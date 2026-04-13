@@ -1,0 +1,29 @@
+## 自动触发规则
+
+### 站点采集指令
+当用户消息包含「采集」「开始采集」「去采集」「跑采集」等关键词时，立即用 `exec` 调用采集脚本，不要反问用户。
+
+**指令判断逻辑：**
+
+1. 用户说「采集」「日常采集」「跑一遍」→ 日常模式（用缓存，不搜索，零 API 消耗）：
+```bash
+python3 skills/site-info-collector/scripts/site-collector.py --use-cache --output /tmp/site-info-$(date +%Y%m%d-%H%M%S).json
+```
+
+2. 用户说「搜新的」「重新搜索」「全量采集」→ 搜索模式（消耗 Tavily API）：
+```bash
+python3 skills/site-info-collector/scripts/site-collector.py --search --output /tmp/site-info-$(date +%Y%m%d-%H%M%S).json
+```
+
+3. 用户说「采集导航站」「采集小说站」等指定类别 → 类别搜索：
+```bash
+python3 skills/site-info-collector/scripts/site-collector.py --search --category 导航 --output /tmp/site-info-nav.json
+```
+
+类别映射：导航站→导航, 小说站→小说, 视频站→视频, 漫画站→漫画
+
+**重要**：
+- 默认用 `--use-cache`（日常模式），只有用户明确说「搜新的」才用 `--search`
+- 收到指令后直接 exec 执行，不要反问用户
+- 回复用户「采集已启动，完成后会自动推送结果」即可
+
