@@ -177,6 +177,29 @@ PYEOF
         }
 fi
 
+# 检查 model 配置
+echo ""
+echo "🧠 检查 AI 模型配置..."
+CURRENT_MODEL=$(openclaw config get model 2>/dev/null || echo "")
+if [ -n "$CURRENT_MODEL" ]; then
+    echo "✅ 当前模型: $CURRENT_MODEL"
+    echo "   Agent '$AGENT_NAME' 将使用此模型理解指令（每次 < 1000 token）"
+else
+    echo "⚠️  未检测到 AI 模型配置"
+    echo "   Agent 需要一个 AI 模型来理解用户指令（如「采集导航站」→ 执行对应脚本）"
+    echo "   实际采集由 Python 爬虫完成，AI token 消耗极少（每次 < 1000 token）"
+    echo ""
+    echo "   请确保已配置模型，例如："
+    echo "   openclaw config set model \"gptproto/claude-sonnet-4-6\""
+    echo ""
+    read -p "是否继续安装？[Y/n] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        echo "请先配置模型后重新运行 setup.sh"
+        exit 1
+    fi
+fi
+
 # ═══════════════════════════════════════
 # 6. 安装 Skill 文件到 Agent workspace
 # ═══════════════════════════════════════
